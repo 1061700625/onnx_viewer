@@ -1,0 +1,895 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>ONNX 算子搜索（上下游可视化）</title>
+    <script src="/static/echarts.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; padding: 20px; 
+
+background-color: #f5f7fa; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; 
+
+padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; }
+        .page-header { text-align: center; margin-bottom: 18px; }
+        .page-header h1 { margin: 0 0 8px 0; }
+        .author-line { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 12px; padding: 4px 10px; border-radius: 999px; background: #f0f7ff; color: #1677ff; font-size: 13px; font-weight: 600; }
+        .usage-guide { max-width: 900px; margin: 0 auto; padding: 11px 14px; border: 1px solid #e8eaed; border-radius: 7px; background: #fafbfc; color: #555; font-size: 13px; line-height: 1.7; text-align: left; }
+        .usage-guide strong { color: #333; }
+        .controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 6px; }
+        .controls-row { display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end; }
+        .controls-row-second { padding-top: 10px; border-top: 1px solid #e8eaed; align-items: center; }
+        .control-group { display: flex; flex-direction: column; }
+        label { font-size: 12px; color: #666; margin-bottom: 4px; font-weight: 
+
+bold; }
+        input, select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 
+
+4px; font-size: 14px; }
+        .file-upload-wrapper { display: flex; align-items: center; gap: 10px; }
+        .btn-upload { display: inline-block; padding: 8px 16px; background-color: 
+
+#28a745; color: white; border-radius: 4px; cursor: pointer; border: none; font-
+
+size: 14px; }
+        .btn-upload:hover { background-color: #218838; }
+        #file-name-display { font-size: 13px; color: #555; }
+        .btn-search { padding: 8px 20px; background-color: #007bff; color: white; 
+
+border: none; border-radius: 4px; cursor: pointer; font-size: 14px; height: 36px; 
+
+}
+        .btn-search:hover { background-color: #0056b3; }
+        .btn-search:disabled { background-color: #ccc; cursor: not-allowed; }
+        #chart-wrapper { position: relative; width: 100%; }
+        #chart-container { width: 100%; height: 700px; border: 1px solid #eee; 
+
+border-radius: 4px; background: #fff; }
+        .fullscreen-btn {
+            position: absolute;
+            right: 14px;
+            bottom: 14px;
+            z-index: 30;
+            width: 38px;
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #d9d9d9;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.94);
+            color: #555;
+            font-size: 22px;
+            line-height: 1;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+            transition: background-color 0.2s, color 0.2s, border-color 0.2s, transform 0.2s;
+        }
+        .fullscreen-btn:hover { background: #f0f7ff; color: #1677ff; border-color: #91caff; }
+        .fullscreen-btn:active { transform: scale(0.96); }
+        #chart-wrapper:fullscreen { width: 100vw; height: 100vh; background: #fff; }
+        #chart-wrapper:fullscreen #chart-container { width: 100%; height: 100%; border: none; border-radius: 0; }
+        #chart-wrapper:-webkit-full-screen { width: 100vw; height: 100vh; background: #fff; }
+        #chart-wrapper:-webkit-full-screen #chart-container { width: 100%; height: 100%; border: none; border-radius: 0; }
+        #node-detail-popup {
+            display: none;
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            z-index: 20;
+            width: min(430px, calc(100% - 24px));
+            max-height: 660px;
+            overflow: auto;
+            box-sizing: border-box;
+            padding: 14px 16px;
+            background: rgba(255, 255, 255, 0.98);
+            border: 1px solid #d9d9d9;
+            border-radius: 8px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.14);
+            color: #333;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        #node-detail-popup.show { display: block; }
+        #node-detail-popup .detail-title { font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+        .legend { display: flex; gap: 15px; justify-content: center; margin-
+
+bottom: 10px; font-size: 14px; }
+        .legend-item { display: flex; align-items: center; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; margin-right: 5px; 
+
+}
+        #selection-container { display: none; margin-bottom: 20px; padding: 15px; 
+
+background: #eef2f7; border-radius: 6px; border-left: 5px solid #007bff; }
+        .node-list { max-height: 200px; overflow-y: auto; background: white; 
+
+border: 1px solid #ddd; border-radius: 4px; margin-top: 10px; }
+        .node-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid 
+
+#eee; font-size: 13px; }
+        .node-item:hover { background-color: #f0f7ff; color: #007bff; }
+        .exact-control { display: flex; align-items: center; min-height: 36px; }
+        .exact-label { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 11px; margin: 0; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; color: #555; font-size: 13px; font-weight: 600; cursor: pointer; user-select: none; transition: border-color .2s, box-shadow .2s, background-color .2s, color .2s; box-sizing: border-box; }
+        .exact-label:hover { border-color: #91caff; color: #1677ff; background: #f5faff; }
+        .exact-label input { position: absolute; opacity: 0; pointer-events: none; }
+        .exact-checkmark { width: 16px; height: 16px; border: 1.5px solid #bfbfbf; border-radius: 4px; background: #fff; box-sizing: border-box; position: relative; transition: all .2s; flex: 0 0 auto; }
+        .exact-label input:checked + .exact-checkmark { background: #1677ff; border-color: #1677ff; }
+        .exact-label input:checked + .exact-checkmark:after { content: ''; position: absolute; left: 4px; top: 1px; width: 5px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+        .exact-label:has(input:checked) { border-color: #91caff; background: #e6f4ff; color: #0958d9; box-shadow: 0 0 0 2px rgba(22,119,255,.08); }
+        .candidate-control { display: none; align-items: center; gap: 8px; }
+        .candidate-control.show { display: flex; }
+        .candidate-control .switch-title { white-space: nowrap; }
+        #candidateSelect { min-width: 280px; max-width: 460px; height: 34px; padding: 5px 30px 5px 10px; border: 1px solid #d9d9d9; border-radius: 4px; background: #fff; color: #333; font-size: 13px; }
+        #candidateSelect:focus { outline: none; border-color: #4096ff; box-shadow: 0 0 0 2px rgba(22,119,255,0.12); }
+        .switch-control { display: flex; align-items: center; gap: 10px; min-height: 28px; }
+        .switch-title { font-size: 13px; color: #555; font-weight: bold; }
+        .switch-status { font-size: 12px; color: #777; min-width: 24px; }
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; inset: 0; background-color: #bfc5cc; transition: .2s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ''; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .2s; border-radius: 50%; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+        .switch input:checked + .slider { background-color: #1890ff; }
+        .switch input:checked + .slider:before { transform: translateX(20px); }
+        .switch input:disabled + .slider { opacity: .45; cursor: not-allowed; }
+        .multi-dot { width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box; border: 3px solid #faad14; margin-right: 5px; }
+
+        /* Toast  -  */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            border-radius: 4px;
+            color: white;
+            font-size: 14px;
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.4s, transform 0.4s;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            min-width: 200px;
+            text-align: center;
+            transform: translateY(20px); /*  */
+        }
+        .toast.show { 
+            opacity: 1; 
+            transform: translateY(0); 
+        }
+        .toast-success { background-color: #28a745; }
+        .toast-error { background-color: #dc3545; }
+        .toast-info { background-color: #17a2b8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="page-header">
+            <h1>ONNX 算子搜索（上下游可视化）</h1>
+            <div class="author-line">作者：小锋学长生活大爆炸</div>
+            <div class="usage-guide">
+                <strong>使用说明：</strong>先上传 ONNX 模型，再输入节点名称或算子类型进行搜索，可设置搜索深度和精确匹配。搜索到多个节点时可通过第二排下拉框快速切换；虚拟节点、引力布局和属性信息均可按需开启。点击图中的节点查看详细输入、输出和属性信息，点击图中空白区域关闭详情窗。
+            </div>
+        </div>
+        <div class="controls">
+            <div class="controls-row">
+                <div class="control-group">
+                    <label>1. 上传模型</label>
+                    <div class="file-upload-wrapper">
+                        <input type="file" id="modelFile" accept=".onnx" style="display: none;">
+                        <label for="modelFile" class="btn-upload">选择 ONNX 模型</label>
+                        <span id="file-name-display"></span>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label>2. 搜索节点（名称或类型）</label>
+                    <input type="text" id="searchKeyword" placeholder="输入节点名称或算子类型...">
+                </div>
+                <div class="control-group">
+                    <label>3. 搜索深度</label>
+                    <input type="number" id="searchDepth" value="2" min="0" max="10" style="width: 60px;">
+                </div>
+                <div class="exact-control">
+                    <label class="exact-label" title="开启后节点名称或算子类型必须完全匹配">
+                        <input type="checkbox" id="exactMatch">
+                        <span class="exact-checkmark"></span>
+                        <span>精确匹配</span>
+                    </label>
+                </div>
+                <div class="control-group" style="justify-content: flex-end;">
+                    <button id="searchBtn" class="btn-search" onclick="performSearch()" disabled>搜索</button>
+                </div>
+            </div>
+            <div class="controls-row controls-row-second">
+                <div class="switch-control">
+                    <span class="switch-title">虚拟节点</span>
+                    <label class="switch" title="显示或隐藏虚拟输入/输出节点">
+                        <input type="checkbox" id="virtualSwitch" disabled onchange="toggleVirtualNodes()">
+                        <span class="slider"></span>
+                    </label>
+                    <span id="virtualSwitchStatus" class="switch-status">隐藏</span>
+                </div>
+                <div class="switch-control">
+                    <span class="switch-title">引力布局</span>
+                    <label class="switch" title="开启后仅虚拟节点参与力导向布局">
+                        <input type="checkbox" id="gravitySwitch" disabled onchange="toggleGravityLayout()">
+                        <span class="slider"></span>
+                    </label>
+                    <span id="gravitySwitchStatus" class="switch-status">关闭</span>
+                </div>
+                <div class="switch-control">
+                    <span class="switch-title">显示属性</span>
+                    <label class="switch" title="开启后在节点点击详情中显示该节点全部 ONNX 属性">
+                        <input type="checkbox" id="attributeSwitch" disabled onchange="toggleNodeAttributes()">
+                        <span class="slider"></span>
+                    </label>
+                    <span id="attributeSwitchStatus" class="switch-status">关闭</span>
+                </div>
+                <div id="candidateControl" class="candidate-control">
+                    <span class="switch-title">匹配节点</span>
+                    <select id="candidateSelect" onchange="selectCandidateNode()">
+                        <option value="">请选择匹配节点</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="legend">
+            <div class="legend-item"><span class="dot" style="background: 
+
+#ff4d4f;"></span>目标节点</div>
+            <div class="legend-item"><span class="dot" style="background: 
+
+#1890ff;"></span>上游节点</div>
+            <div class="legend-item"><span class="dot" style="background: 
+
+#52c41a;"></span>下游节点</div>
+            <div class="legend-item"><span class="multi-dot"></span>存在虚拟多输入/多输出</div>
+        </div>
+        <div id="chart-wrapper">
+            <div id="chart-container"></div>
+            <div id="node-detail-popup"></div>
+            <button id="fullscreenBtn" class="fullscreen-btn" type="button" title="全屏显示" aria-label="全屏显示">⛶</button>
+        </div>
+    </div>
+
+    <script>
+        var chart = null;
+        var chartWrapper = document.getElementById('chart-wrapper');
+        var fullscreenBtn = document.getElementById('fullscreenBtn');
+        var virtualSwitch = document.getElementById('virtualSwitch');
+        var virtualSwitchStatus = document.getElementById('virtualSwitchStatus');
+        var gravitySwitch = document.getElementById('gravitySwitch');
+        var gravitySwitchStatus = document.getElementById('gravitySwitchStatus');
+        var attributeSwitch = document.getElementById('attributeSwitch');
+        var attributeSwitchStatus = document.getElementById('attributeSwitchStatus');
+        var candidateControl = document.getElementById('candidateControl');
+        var candidateSelect = document.getElementById('candidateSelect');
+        var currentCandidates = [];
+        var currentGraphNodes = [];
+        var currentGraphLinks = [];
+        var showVirtualNodes = false;
+        var useGravityLayout = false;
+        var showNodeAttributes = false;
+        var selectedDetailNodeId = null;
+        var nodeDetailPopup = document.getElementById('node-detail-popup');
+        var lastNodeClickTime = -10000;
+
+        function showToast(message, type = 'info') {
+            var existingToast = document.querySelector('.toast');
+            if (existingToast) existingToast.remove();
+            var toast = document.createElement('div');
+            toast.className = 'toast toast-' + type;
+            toast.innerText = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.classList.add('show'), 10);
+            setTimeout(() => {
+                toast.classList.remove('show');
+                setTimeout(() => toast.remove(), 400);
+            }, 3000);
+        }
+
+        function escapeHtml(text) {
+            return String(text || '').replace(/[&<>"']/g, function(ch) {
+                return ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[ch];
+            });
+        }
+
+        function updateVirtualSwitch() {
+            var hasGraph = currentGraphNodes.length > 0;
+            virtualSwitch.disabled = !hasGraph;
+            virtualSwitch.checked = showVirtualNodes;
+            virtualSwitchStatus.innerText = showVirtualNodes ? '显示' : '隐藏';
+        }
+
+        function toggleVirtualNodes() {
+            if (!currentGraphNodes.length) return;
+            showVirtualNodes = virtualSwitch.checked;
+            updateVirtualSwitch();
+            renderGraph(currentGraphNodes, currentGraphLinks);
+        }
+
+        function updateGravitySwitch() {
+            var hasGraph = currentGraphNodes.length > 0;
+            gravitySwitch.disabled = !hasGraph;
+            gravitySwitch.checked = useGravityLayout;
+            gravitySwitchStatus.innerText = useGravityLayout ? '开启' : '关闭';
+        }
+
+        function toggleGravityLayout() {
+            if (!currentGraphNodes.length) return;
+            useGravityLayout = gravitySwitch.checked;
+            updateGravitySwitch();
+            renderGraph(currentGraphNodes, currentGraphLinks);
+        }
+
+        function updateAttributeSwitch() {
+            var hasGraph = currentGraphNodes.length > 0;
+            attributeSwitch.disabled = !hasGraph;
+            attributeSwitch.checked = showNodeAttributes;
+            attributeSwitchStatus.innerText = showNodeAttributes ? '开启' : '关闭';
+        }
+
+        function toggleNodeAttributes() {
+            if (!currentGraphNodes.length) return;
+            showNodeAttributes = attributeSwitch.checked;
+            updateAttributeSwitch();
+            // 属性显示规则发生变化后关闭当前详情，下一次点击节点时按新设置展示。
+            closeNodeDetail();
+        }
+
+        function resetCandidateSelect() {
+            currentCandidates = [];
+            candidateSelect.innerHTML = '<option value="">请选择匹配节点</option>';
+            candidateControl.classList.remove('show');
+        }
+
+        function populateCandidateSelect(candidates) {
+            currentCandidates = candidates || [];
+            candidateSelect.innerHTML = '<option value="">请选择匹配节点</option>';
+            currentCandidates.forEach(function(node) {
+                var option = document.createElement('option');
+                option.value = String(node.index);
+                option.textContent = '[' + node.type + '] ' + node.name;
+                candidateSelect.appendChild(option);
+            });
+            if (currentCandidates.length > 1) {
+                candidateControl.classList.add('show');
+            } else {
+                candidateControl.classList.remove('show');
+            }
+        }
+
+        function selectCandidateNode() {
+            var value = candidateSelect.value;
+            if (value === '') return;
+            visualizeNode(parseInt(value, 10), true);
+        }
+
+        function formatIoTooltip(items, direction) {
+            if (!items || !items.length) return '<span style="color:#999">无</span>';
+            return items.map(function(item) {
+                var port = (direction === 'input' ? 'in' : 'out') + item.index;
+                var relation = direction === 'input' ? item.source : item.targets;
+                return '<div style="margin-top:4px;line-height:1.45">' +
+                       '<code>' + port + '</code> · <code>' + escapeHtml(item.tensor) + '</code><br/>' +
+                       '<span style="color:#666">' + escapeHtml(relation) + '</span></div>';
+            }).join('');
+        }
+
+        function tensorKindText(kind) {
+            var names = {
+                value_info: 'value_info',
+                graph_input: 'Graph Input',
+                graph_output: 'Graph Output',
+                initializer: 'Initializer',
+                unknown: '未知'
+            };
+            return names[kind] || kind || '未知';
+        }
+
+        function formatTensorMeta(items, direction) {
+            var title = direction === 'input' ? '输入 Tensor 信息' : '输出 Tensor 信息';
+            if (!items || !items.length) {
+                return '<div style="margin-top:8px"><b>' + title + '</b><div style="margin-top:4px;color:#999">无</div></div>';
+            }
+            var body = items.map(function(item) {
+                var info = item.tensorInfo || {};
+                var port = (direction === 'input' ? 'in' : 'out') + item.index;
+                return '<div style="margin-top:5px;padding:5px 7px;background:#fafafa;border-radius:4px;line-height:1.5">' +
+                       '<code>' + port + '</code> · <code>' + escapeHtml(item.tensor) + '</code><br/>' +
+                       'dtype: <code>' + escapeHtml(info.dtype || 'unknown') + '</code>，' +
+                       'shape: <code>' + escapeHtml(info.shapeText || '?') + '</code><br/>' +
+                       '<span style="color:#888">来源: ' + escapeHtml(tensorKindText(info.kind)) + '</span>' +
+                       '</div>';
+            }).join('');
+            return '<div style="margin-top:8px"><b>' + title + '</b>' + body + '</div>';
+        }
+
+        function formatAttributeTooltip(attributes, domain, inputDetails, outputDetails, modelExportInfo, explicitAttributeCount) {
+            var attrs = attributes || [];
+            var domainText = domain || 'ai.onnx';
+            var exportInfo = modelExportInfo || {};
+            var producerLine = '';
+            if (exportInfo.producerName) {
+                producerLine = '<div style="margin-top:3px;color:#777">模型导出器: <code>' +
+                               escapeHtml(exportInfo.producerName) +
+                               (exportInfo.producerVersion ? (' ' + escapeHtml(exportInfo.producerVersion)) : '') +
+                               '</code>' +
+                               (exportInfo.isOnnxTool ? ' <span style="color:#1677ff">(onnx_tool)</span>' : '') +
+                               '</div>';
+            }
+
+            var header = '<div style="margin-top:8px;border-top:1px solid #eee;padding-top:6px">' +
+                         '<b>节点属性 / 模型信息</b>' +
+                         '<div style="margin-top:3px;color:#777">Domain: <code>' + escapeHtml(domainText) + '</code></div>' +
+                         producerLine;
+
+            var attrHeader = '<div style="margin-top:8px"><b>ONNX 节点属性</b> ' +
+                             '<span style="color:#999">(' + attrs.length + '，显式 ' + (explicitAttributeCount || 0) + ')</span></div>';
+
+            var attrBody;
+            if (!attrs.length) {
+                attrBody = '<div style="margin-top:4px;color:#999">该算子没有 NodeProto attribute，也没有可用的 ONNX Schema 属性。</div>';
+            } else {
+                attrBody = attrs.map(function(attr) {
+                    var refText = attr.refAttrName
+                        ? '<br/><span style="color:#777">引用属性: <code>' + escapeHtml(attr.refAttrName) + '</code></span>'
+                        : '';
+                    var sourceText = attr.source
+                        ? '<br/><span style="color:#777">来源: ' + escapeHtml(attr.source) + '</span>'
+                        : '';
+                    var requiredText = attr.required
+                        ? ' <span style="color:#cf1322">required</span>'
+                        : '';
+                    var doc = attr.docString || attr.schemaDescription || '';
+                    var docText = doc
+                        ? '<br/><span style="color:#999">说明: ' + escapeHtml(doc) + '</span>'
+                        : '';
+                    return '<div style="margin-top:6px;padding:5px 7px;background:#fafafa;border-radius:4px;line-height:1.5">' +
+                           '<b>' + escapeHtml(attr.name) + '</b> ' +
+                           '<span style="color:#999">[' + escapeHtml(attr.type) + ']</span>' + requiredText + '<br/>' +
+                           '<span style="word-break:break-all">' + escapeHtml(attr.value) + '</span>' +
+                           sourceText + refText + docText + '</div>';
+                }).join('');
+            }
+
+            var onnxToolNote = exportInfo.isOnnxTool
+                ? '<div style="margin-top:8px;padding:6px 8px;background:#f0f7ff;border-radius:4px;color:#555">' +
+                  '该模型由 onnx_tool 保存。onnx_tool 的 shape/type 信息主要保存在 graph.value_info，下面直接读取这些 Tensor 元数据。' +
+                  '</div>'
+                : '';
+
+            return header + onnxToolNote + attrHeader + attrBody +
+                   formatTensorMeta(inputDetails || [], 'input') +
+                   formatTensorMeta(outputDetails || [], 'output') +
+                   '</div>';
+        }
+
+        function formatNodeDetail(data) {
+            if (!data) return '';
+            if (data.isBoundary) {
+                var boundaryDirectionText = data.direction === 'input' ? '输入源' : '输出端';
+                return '<div class="detail-title">目标节点' + boundaryDirectionText + '</div>' +
+                       '类型: ' + escapeHtml(data.boundaryKind || data.value) + '<br/>' +
+                       'Tensor: <code>' + escapeHtml(data.tensor) + '</code><br/>' +
+                       '端口: ' + escapeHtml(data.shortLabel) + '<br/>' +
+                       '说明: ' + escapeHtml(data.detail || '');
+            }
+            if (data.isVirtual) {
+                var directionText = data.direction === 'input' ? '输入' : '输出';
+                return '<div class="detail-title">虚拟' + directionText + '节点</div>' +
+                       'Tensor: <code>' + escapeHtml(data.tensor) + '</code><br/>' +
+                       '端口: ' + escapeHtml(data.shortLabel) + '<br/>' +
+                       '来源/去向: ' + escapeHtml(data.detail || data.virtualKind);
+            }
+
+            var lvl = data.level;
+            var lvlText = '目标节点';
+            if (lvl < 0) lvlText = '上游第 ' + Math.abs(lvl) + ' 层';
+            else if (lvl > 0) lvlText = '下游第 ' + lvl + ' 层';
+
+            var flags = [];
+            if (data.hasMultiInput) flags.push('多输入（含虚拟输入）');
+            if (data.hasMultiOutput) flags.push('多输出（含虚拟输出）');
+            var flagHtml = flags.length
+                ? '<div style="margin-top:5px;color:#d48806;font-weight:bold">提示: ' + flags.join('、') + '</div>'
+                : '';
+
+            return '<div class="detail-title">算子节点</div>' +
+                   '名称: ' + escapeHtml(data.name) + '<br/>' +
+                   '类型: ' + escapeHtml(data.value) + '<br/>' +
+                   '层级: ' + lvlText + '<br/>' +
+                   '输入数: ' + (data.inputCount || 0) + '，输出数: ' + (data.outputCount || 0) +
+                   flagHtml +
+                   '<div style="margin-top:8px;border-top:1px solid #eee;padding-top:6px"><b>输入详情</b>' +
+                   formatIoTooltip(data.inputDetails || [], 'input') + '</div>' +
+                   '<div style="margin-top:8px;border-top:1px solid #eee;padding-top:6px"><b>输出详情</b>' +
+                   formatIoTooltip(data.outputDetails || [], 'output') + '</div>' +
+                   (showNodeAttributes ? formatAttributeTooltip(
+                       data.attributes || [],
+                       data.domain,
+                       data.inputDetails || [],
+                       data.outputDetails || [],
+                       data.modelExportInfo || {},
+                       data.explicitAttributeCount || 0
+                   ) : '');
+        }
+
+        function showNodeDetail(data) {
+            if (!nodeDetailPopup || !data) return;
+            selectedDetailNodeId = data.id;
+            nodeDetailPopup.innerHTML = formatNodeDetail(data);
+            nodeDetailPopup.classList.add('show');
+        }
+
+        function closeNodeDetail() {
+            selectedDetailNodeId = null;
+            if (nodeDetailPopup) {
+                nodeDetailPopup.classList.remove('show');
+                nodeDetailPopup.innerHTML = '';
+            }
+        }
+
+        function isChartFullscreen() {
+            return document.fullscreenElement === chartWrapper || document.webkitFullscreenElement === chartWrapper;
+        }
+
+        function updateFullscreenButton() {
+            if (!fullscreenBtn) return;
+            var active = isChartFullscreen();
+            fullscreenBtn.innerText = active ? '⛶' : '⛶';
+            fullscreenBtn.title = active ? '退出全屏' : '全屏显示';
+            fullscreenBtn.setAttribute('aria-label', active ? '退出全屏' : '全屏显示');
+        }
+
+        function toggleChartFullscreen() {
+            if (!chartWrapper) return;
+            if (!isChartFullscreen()) {
+                var request = chartWrapper.requestFullscreen || chartWrapper.webkitRequestFullscreen;
+                if (request) {
+                    var result = request.call(chartWrapper);
+                    if (result && typeof result.catch === 'function') {
+                        result.catch(function(err) {
+                            showToast('进入全屏失败：' + err.message, 'error');
+                        });
+                    }
+                } else {
+                    showToast('当前浏览器不支持全屏显示', 'error');
+                }
+            } else {
+                var exit = document.exitFullscreen || document.webkitExitFullscreen;
+                if (exit) exit.call(document);
+            }
+        }
+
+        function handleFullscreenChange() {
+            updateFullscreenButton();
+            // 全屏切换完成后再让 ECharts 重新读取容器尺寸。
+            setTimeout(function() {
+                if (chart) chart.resize();
+            }, 60);
+        }
+
+        function initChart() {
+            if (typeof echarts === 'undefined') {
+                showToast('ECharts 加载失败：请检查 static/echarts.min.js', 'error');
+                return false;
+            }
+            chart = echarts.init(document.getElementById('chart-container'));
+            // ZRender 能捕获整个画布。节点 click 会先记录时间；其它画布点击则关闭详情。
+            // 使用时间戳而不是 event.target，避免空白区域在部分 ECharts/ZRender 版本中仍带 target 而无法关闭。
+            chart.getZr().on('click', function() {
+                setTimeout(function() {
+                    if (Date.now() - lastNodeClickTime > 120) {
+                        closeNodeDetail();
+                    }
+                }, 0);
+            });
+            return true;
+        }
+
+        window.onload = function() {
+            initChart();
+            if (fullscreenBtn) fullscreenBtn.addEventListener('click', toggleChartFullscreen);
+            document.addEventListener('fullscreenchange', handleFullscreenChange);
+            document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+            updateFullscreenButton();
+            updateVirtualSwitch();
+            updateGravitySwitch();
+            updateAttributeSwitch();
+            document.getElementById('searchKeyword').addEventListener('keydown', 
+
+function(e) {
+                if (e.key === 'Enter') {
+                    performSearch();
+                }
+            });
+        };
+
+        document.getElementById('modelFile').addEventListener('change', function
+
+(e) {
+            var file = e.target.files[0];
+            var fileNameDisplay = document.getElementById('file-name-display');
+            var searchBtn = document.getElementById('searchBtn');
+            if (!file) return;
+            fileNameDisplay.innerText = "已选择：" + file.name;
+            showToast('正在上传 ' + file.name + ' ...', 'info');
+            searchBtn.disabled = true;
+            var formData = new FormData();
+            formData.append('model', file);
+            fetch('/upload', { method: 'POST', body: formData })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showToast('模型上传成功：' + data.filename, 'success');
+                        searchBtn.disabled = false;
+                        currentGraphNodes = [];
+                        currentGraphLinks = [];
+                        showVirtualNodes = false;
+                        useGravityLayout = false;
+                        showNodeAttributes = false;
+                        resetCandidateSelect();
+                        updateVirtualSwitch();
+                        updateGravitySwitch();
+                        updateAttributeSwitch();
+                        if (chart) chart.clear();
+                    } else {
+                        showToast('模型上传失败：' + data.error, 'error');
+                    }
+                })
+                .catch(err => { showToast('上传请求失败', 'error'); });
+        });
+
+        function performSearch() {
+            if (!chart) initChart();
+            var keyword = document.getElementById('searchKeyword').value;
+            var exactMatch = document.getElementById('exactMatch').checked;
+            if (!keyword) { alert('请输入搜索关键字'); return; }
+            
+            showToast('正在搜索...', 'info');
+            resetCandidateSelect();
+
+            fetch('/search_candidates', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ keyword: keyword, exact_match: exactMatch })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showToast('搜索失败：' + data.error, 'error');
+                    return;
+                }
+                populateCandidateSelect(data.candidates);
+                if (data.candidates.length === 1) {
+                    showToast('找到唯一匹配节点，正在生成图...', 'success');
+                    visualizeNode(data.candidates[0].index, false);
+                } else {
+                    showToast('找到 ' + data.candidates.length + ' 个匹配节点，请在第二排下拉框中选择', 'info');
+                }
+            })
+            .catch(err => { showToast('搜索请求失败', 'error'); });
+        }
+
+        function visualizeNode(nodeIndex, fromCandidateSelect) {
+            var depth = document.getElementById('searchDepth').value;
+            showToast('正在生成子图...', 'info');
+            closeNodeDetail();
+            chart.clear();
+            if (!fromCandidateSelect && currentCandidates.length > 1) {
+                candidateSelect.value = String(nodeIndex);
+            }
+
+            fetch('/visualize', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ node_index: nodeIndex, depth: parseInt
+
+(depth) })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    showToast('生成失败：' + data.error, 'error');
+                    return;
+                }
+                currentGraphNodes = data.nodes || [];
+                currentGraphLinks = data.links || [];
+                updateVirtualSwitch();
+                updateGravitySwitch();
+                updateAttributeSwitch();
+                showToast('可视化完成：共 ' + data.nodes.length + ' 个节点', 'success');
+                renderGraph(currentGraphNodes, currentGraphLinks);
+            })
+            .catch(err => { showToast('可视化请求失败', 'error'); });
+        }
+
+        function renderGraph(nodes, links) {
+            closeNodeDetail();
+            var visibleNodes = showVirtualNodes
+                ? nodes.slice()
+                : nodes.filter(function(n) { return !n.isVirtual; });
+            var visibleIds = new Set(visibleNodes.map(function(n) { return n.id; }));
+            var visibleLinks = links.filter(function(link) {
+                return visibleIds.has(link.source) && visibleIds.has(link.target);
+            });
+
+            var option = {
+                title: { text: '', left: 'center' },
+                tooltip: {
+                    trigger: 'item',
+                    // 节点详情改为独立 DOM 浮层，ECharts tooltip 不再负责节点详情。
+                    show: false,
+                    triggerOn: 'none',
+                    alwaysShowContent: false,
+                    enterable: false,
+                    confine: true,
+                    backgroundColor: 'rgba(255, 255, 255, 0.97)',
+                    borderColor: '#d9d9d9',
+                    textStyle: { color: '#333', fontSize: 12 },
+                    formatter: function (params) {
+                        if (params.dataType === 'node') {
+                            if (params.data.isBoundary) {
+                                var boundaryDirectionText = params.data.direction === 'input' ? '输入源' : '输出端';
+                                return '<b style="color:#333">目标节点' + boundaryDirectionText + '</b><br/>' +
+                                       '类型: ' + escapeHtml(params.data.boundaryKind || params.data.value) + '<br/>' +
+                                       'Tensor: ' + escapeHtml(params.data.tensor) + '<br/>' +
+                                       '端口: ' + escapeHtml(params.data.shortLabel) + '<br/>' +
+                                       '说明: ' + escapeHtml(params.data.detail || '');
+                            }
+                            if (params.data.isVirtual) {
+                                var directionText = params.data.direction === 'input' ? '输入' : '输出';
+                                return '<b>虚拟' + directionText + '节点</b><br/>' +
+                                       'Tensor: <code>' + escapeHtml(params.data.tensor) + '</code><br/>' +
+                                       '端口: ' + escapeHtml(params.data.shortLabel) + '<br/>' +
+                                       '来源/去向: ' + escapeHtml(params.data.detail || params.data.virtualKind);
+                            }
+
+                            var lvl = params.data.level;
+                            var lvlText = '目标节点';
+                            if (lvl < 0) lvlText = '上游第 ' + Math.abs(lvl) + ' 层';
+                            else if (lvl > 0) lvlText = '下游第 ' + lvl + ' 层';
+
+                            var flags = [];
+                            if (params.data.hasMultiInput) flags.push('多输入（含虚拟输入）');
+                            if (params.data.hasMultiOutput) flags.push('多输出（含虚拟输出）');
+                            var flagHtml = flags.length
+                                ? '<br/><span style="color:#d48806;font-weight:bold">提示: ' + flags.join('、') + '</span>'
+                                : '';
+
+                            return '<b>算子节点</b><br/>' +
+                                   '名称: ' + escapeHtml(params.data.name) + '<br/>' +
+                                   '类型: ' + escapeHtml(params.data.value) + '<br/>' +
+                                   '层级: ' + lvlText + '<br/>' +
+                                   '输入数: ' + (params.data.inputCount || 0) + '，输出数: ' + (params.data.outputCount || 0) +
+                                   flagHtml +
+                                   '<div style="margin-top:8px;border-top:1px solid #eee;padding-top:6px"><b>输入详情</b>' +
+                                   formatIoTooltip(params.data.inputDetails || [], 'input') + '</div>' +
+                                   '<div style="margin-top:8px;border-top:1px solid #eee;padding-top:6px"><b>输出详情</b>' +
+                                   formatIoTooltip(params.data.outputDetails || [], 'output') + '</div>' +
+                                   (showNodeAttributes ? formatAttributeTooltip(params.data.attributes || [], params.data.domain) : '');
+                        }
+                        if (params.dataType === 'edge' && params.data.tensor) {
+                            return 'Tensor: <code>' + escapeHtml(params.data.tensor) + '</code>';
+                        }
+                        return '';
+                    }
+                },
+                series: [{
+                    type: 'graph',
+                    // 引力布局默认关闭。开启时只有 isVirtual=True 的节点参与力导向，非虚拟节点始终固定。
+                    layout: useGravityLayout ? 'force' : 'none',
+                    roam: true,
+                    draggable: true,
+                    force: {
+                        initLayout: 'none',
+                        repulsion: 170,
+                        edgeLength: 75,
+                        gravity: 0.09,
+                        friction: 0.6,
+                        layoutAnimation: true
+                    },
+                    data: visibleNodes.map(function(n) {
+                        return {
+                            id: n.id,
+                            name: n.name,
+                            x: n.x,
+                            y: n.y,
+                            fixed: useGravityLayout ? !n.isVirtual : true,
+                            level: n.level,
+                            symbol: n.symbol || 'circle',
+                            symbolSize: n.symbolSize,
+                            isVirtual: !!n.isVirtual,
+                            isBoundary: !!n.isBoundary,
+                            boundaryKind: n.boundaryKind,
+                            virtualKind: n.virtualKind,
+                            direction: n.direction,
+                            slotIndex: n.slotIndex,
+                            tensor: n.tensor,
+                            detail: n.detail,
+                            shortLabel: n.shortLabel,
+                            inputCount: n.inputCount,
+                            outputCount: n.outputCount,
+                            outputBranchCount: n.outputBranchCount || 0,
+                            hasMultiInput: !!n.hasMultiInput,
+                            hasMultiOutput: !!n.hasMultiOutput,
+                            virtualInputCount: n.virtualInputCount || 0,
+                            virtualOutputCount: n.virtualOutputCount || 0,
+                            ioHint: n.ioHint,
+                            inputDetails: n.inputDetails,
+                            outputDetails: n.outputDetails,
+                            domain: n.domain,
+                            attributes: n.attributes || [],
+                            attributeCount: n.attributeCount || 0,
+                            explicitAttributeCount: n.explicitAttributeCount || 0,
+                            modelExportInfo: n.modelExportInfo || {},
+                            itemStyle: n.isVirtual
+                                ? { color: '#fff', borderColor: '#8c8c8c', borderWidth: 2 }
+                                : (n.isBoundary
+                                    ? { color: '#8c8c8c', borderColor: '#595959', borderWidth: 2 }
+                                    : {
+                                        color: n.category === 0 ? '#ff4d4f' : (n.category === 1 ? '#1890ff' : '#52c41a'),
+                                        borderColor: (n.hasMultiInput || n.hasMultiOutput) ? '#faad14' : 'rgba(255,255,255,0.85)',
+                                        borderWidth: (n.hasMultiInput || n.hasMultiOutput) ? 3 : 1
+                                    }),
+                            label: n.isVirtual
+                                ? {
+                                    show: true,
+                                    position: n.direction === 'input' ? 'left' : 'right',
+                                    formatter: n.shortLabel || '',
+                                    color: '#666',
+                                    fontSize: 9
+                                }
+                                : (n.isBoundary
+                                    ? {
+                                        show: true,
+                                        position: n.direction === 'input' ? 'left' : 'right',
+                                        formatter: n.shortLabel || '',
+                                        color: '#555',
+                                        fontSize: 9
+                                    }
+                                    : {
+                                        show: true,
+                                        position: 'inside',
+                                        formatter: '{c}',
+                                        color: '#fff',
+                                        fontSize: 10,
+                                        fontWeight: 'bold'
+                                    }),
+                            value: n.type,
+                            category: n.category
+                        };
+                    }),
+                    links: visibleLinks.map(function(link) {
+                        return Object.assign({}, link, {
+                            lineStyle: Object.assign(
+                                { color: '#666', width: 2, opacity: 0.8 },
+                                link.lineStyle || {}
+                            )
+                        });
+                    }),
+                    categories: [{ name: '目标节点' }, { name: '上游节点' }, { name: '下游节点' }],
+                    edgeSymbol: ['none', 'arrow'],
+                    edgeSymbolSize: [0, 10],
+                    lineStyle: { color: '#666', width: 2, curveness: 0.1, opacity: 0.8 }
+                }]
+            };
+            chart.setOption(option, true);
+
+            // 点击节点打开独立详情窗；其它画布点击由 ZRender 统一关闭。
+            chart.off('click');
+            chart.on('click', function(params) {
+                if (params.componentType === 'series' &&
+                    params.seriesType === 'graph' &&
+                    params.dataType === 'node') {
+                    lastNodeClickTime = Date.now();
+                    showNodeDetail(params.data);
+                }
+            });
+        }
+
+    </script>
+</body>
+</html>
